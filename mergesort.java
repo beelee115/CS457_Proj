@@ -28,10 +28,12 @@ public static void main(String[] args) throws Exception{
     //create random data
     List<Integer> randomNumbers = newArrayList<>();
     Random rand = new Random();
+    int numItems = 100; 
     for (int i = 0; i < numItems; i++){
         randomNumbers.add(rand.nextInt(1_000_000));
     }
     //RDD
+    int numPartitions = 8;
     JavaRDD<String> data = sc.parallelize(randomNumbers, numPartitions);
 
     
@@ -43,6 +45,17 @@ public static void main(String[] args) throws Exception{
         //data randomly created ? not sure
 
     //merge results
+
+    // sort within each partition 
+    JavaRDD<Integer> sortedInPartition = rdd.mapPartitions((FlatMapFunction<Iterator<Integer>, Integer>) iter -> {
+            List<Integer> list = new ArrayList<>();
+            iter.forEachRemaining(e -> list.add(e));
+            Collections.sort(list);
+            return list.iterator(); 
+        });
+
+     // combining results from all partitions
+        JavaRDD<Integer> combineSortedPartitions = sortedInPartition.sortBy(x -> x, true, numPartitions);
 
     //done
     sc.stop();
