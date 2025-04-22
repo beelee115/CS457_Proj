@@ -1,126 +1,92 @@
-import multiprocessing
-import random
 import numpy as np
+import random
 import time
-import os
 from dask.distributed import Client, LocalCluster
+import dask.array as da
+from dask import delayed
 
-# Similar to GeeksforGeeks implementation
-# https://www.geeksforgeeks.org/merge-sort/
-def merge(arr, left, mid, right):
-    """Merge two sorted subarrays"""
-    # calculate sizes of left and right subarrays
-    s1 = mid - left + 1
-    s2 = right - mid
-    
-    # create temp arrays and copy data to them (L[] and R[])
-    L = []
-    for i in range(s1):
-        L.append(arr[left+i])
-    
-    R = []
-    for j in range(s2):
-        R.append(arr[mid+1+j])
-    
-    # initialize index of first subarray and second subarray
-    i = j = 0
-    # index of merged subarray
-    k = left
-    
-    # merge the temp arrays into arr[left right]
-    while i < len(L) and j < len(R):
-        if L[i] <= R[j]:
-            arr[k] = L[i]
+def parallelMerge(left, right):
+    # merge two sorted arrays into one sorted array
+    result = np.empty(len(left) + len(right), dtype=left.dtype)
+    i = 0
+    j = 0
+    k = 0
+    while i < len(left) and j < len(right):
+        if left[i] <= right[j]:
+            result[k] = left[i]
             i += 1
         else:
-            arr[k] = R[j]
+            result[k] = right[j]
             j += 1
         k += 1
     
-    # copy remaining elements of L and R
-    while i < len(L):
-        arr[k] = L[i]
-        i += 1
-        k += 1
+    # Copy remaining elements
+    if i < len(left):
+        result[k:] = left[i:]
+    elif j < len(right):
+        result[k:] = right[j:]
+    return result
+
+# distributed merge sort using dask
+def parallelMergeSort(arr, client, chunkSize=10000):
+    arrNp = np.array(arr)
     
-    while j < len(R):
-        arr[k] = R[j]
-        j += 1
-        k += 1
-
-def mergeSort(arr, client, chunkSize=10_000):
-    import dask.array as da
-    import numpy as np
-
-    # convert to NumPy array first
-    arr_np = np.array(arr)
-    # create Dask array 
-    darr = da.from_array(arr_np, chunks=(chunkSize,))
-
-    # sort the chunks
-    sortedChunks = darr.map_blocks(np.sort, dtype=arr_np.dtype)
-
-    # comput sorted chunks
-    future = client.compute(sortedChunks)
-    sortedParts = client.gather(future)
-
-    # Ensure all parts are proper 1D arrays
-    sortedParts = [np.atleast_1d(part) for part in sortedParts]
-
-    # debug print 
-    #print(f"Number of sorted parts: {len(sortedParts)}")
-    #for i, part in enumerate(sortedParts[:3]):
-     #   print(f"Part {i} shape: {np.array(part).shape}")
-
-    # concatenate the parts and sort 
-    combined = np.concatenate(sortedParts)
-    finalSorted = np.sort(combined)
-
-    return finalSorted.tolist()
-
-def generateTestDataSet():
-    # generate 100000 points to test merge sort on
-    unsortedArr = []
-    for _ in range(100_000):
-        num = random.randint(0, 1_000_000)
-        unsortedArr.append(num)
-
-    with open('unsortedNum.txt', 'w') as f:
-        f.write('\n'.join(map(str, unsortedArr)))
-    return unsortedArr
-
-def loadTestData():
-    try:
-        with open('unsortedNum.txt', 'r') as f:
-            return [int(line.strip()) for line in f if line.strip()]
-    except FileNotFoundError:
-        return generateTestDataSet()
+    # create dask array with chunk size
+    darr = da.from_array(arrNp, chunks=(chunkSize,))
     
-# verify if sorted correctly
+    # sort each chunk in parallel
+    sortedChunks = darr.map_blocks(np.sort, dtype=arrNp.dtype)
+    
+    # convert to delayed objects for tree reduction
+    # get the delayed objects from the Dask array
+    chunkDelayedObjects = sortedChunks.to_delayed()
+    # flatten in case we have multi-dimensional chunks
+    flatDelayedChunks = chunkDelayedObjects.flatten()
+    # Convert to list of delayed objects
+    delayedChunks = [delayed(chunk) for chunk in flatDelayedChunks]
+    
+    # tree reduction for merging
+    while len(delayedChunks) > 1:
+        newChunk = []
+        for i in range(0, len(delayedChunks), 2):
+            if i+1 < len(delayedChunks):
+                # merge pairs of chunks
+                merged = delayed(parallelMerge)(delayedChunks[i], delayedChunks[i+1])
+                newChunk.append(merged)
+            else:
+                # odd number case - carry forward the last chunk
+                newChunk.append(delayedChunks[i])
+        delayedChunks = newChunk
+    
+    # compute the final merged array
+    finalArr = client.compute(delayedChunks[0])
+    return finalArr.result()
+
 def verifySort(arr):
+    # helper function to verify if dask merge sort works
     return np.all(np.diff(arr) >= 0)
 
-def textOutput(sortedArr, filename='sortedOutput.txt'):
-    with open(filename, 'w') as f:
-        f.write('\n'.join(map(str, sortedArr)))
-    print(f"\nSorted output saved")
+def generateTestData(size=100000):
+    # generate random numbers to sort
+    return [random.randint(0, 1000000) for _ in range(size)]
 
 if __name__ == "__main__":
-    os.makedirs('output', exist_ok=True)
-    # Test cases
-    testArray = loadTestData()
-
-    cluster = LocalCluster(n_workers=4, threads_per_worker=1)  # Local testing
+    # setup cluster and the client
+    cluster = LocalCluster(n_workers=4, threads_per_worker=1)
     client = Client(cluster)
-
-    # time parallel sort
-    startTime = time.time()
-    sortedArr = mergeSort(testArray, client)
-    totalTime = time.time() - startTime
-    print(f"Sort completed in {totalTime:.2f} seconds")
-    print(f"Sort verified: {verifySort(sortedArr)}")
-
-    textOutput(sortedArr, 'output/mergeSort.txt')
     
+    # generate the test data
+    test_array = generateTestData()
+    
+    # run parallel merge sort and keep note of time
+    startTime = time.time()
+    sorted_arr = parallelMergeSort(test_array, client)
+    totalTime = time.time() - startTime
+    
+    # output
+    print(f"Sort completed in {totalTime:.2f} seconds")
+    print(f"Sort verified: {verifySort(sorted_arr)}")
+    
+    # close client and cluster after we are done
     client.close()
     cluster.close()
