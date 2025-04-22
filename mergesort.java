@@ -25,6 +25,8 @@ public static void main(String[] args) throws Exception{
     SparkConf conf = new SparkConf().setAppName("DistributedMergeSort");
     JavaSparkContext sc = new JavaSparkContext(conf);
 
+    long startTime = System.currentTimeMillis(); 
+    
     //create random data
     List<Integer> randomNumbers = newArrayList<>();
     Random rand = new Random();
@@ -47,15 +49,34 @@ public static void main(String[] args) throws Exception{
     //merge results
 
     // sort within each partition 
-    JavaRDD<Integer> sortedInPartition = rdd.mapPartitions((FlatMapFunction<Iterator<Integer>, Integer>) iter -> {
+        long withinPartitionSortStartTime = System.currentTimeMillis();
+        JavaRDD<Integer> sortedInPartition = rdd.mapPartitions(iter -> {
             List<Integer> list = new ArrayList<>();
-            iter.forEachRemaining(e -> list.add(e));
+            while (iter.hasNext()) {
+                list.add(iter.next());
+            }
             Collections.sort(list);
             return list.iterator(); 
         });
+        long withinPartitionSortEndTime = System.currentTimeMillis();
+        System.out.println("time for sorting within each partition: " + (withinPartitionSortEndTime - withinPartitionSortStartTime) + " ms");
 
-     // combining results from all partitions
+        // combining results from all partitions
+        long combiningPartitionStartTime = System.currentTimeMillis();
         JavaRDD<Integer> combineSortedPartitions = sortedInPartition.sortBy(x -> x, true, numPartitions);
+        long combiningPartitionEndTime = System.currentTimeMillis();
+        System.out.println("time to combine all partitions: " + (combiningPartitionEndTime - combiningPartitionStartTime) + " ms");
+
+        // Collect and print the first 100 sorted numbers
+        List<Integer> sorted = combineSortedPartitions.take(100);
+        System.out.println("First 100 sorted numbers:");
+        for (int i = 0; i < sorted.size(); i++) {
+            System.out.println(sorted.get(i));
+        }
+        
+        long endTime = System.currentTimeMillis();
+        System.out.println("Total runtime: " + (endTime - startTime) + " ms");
+
 
     //done
     sc.stop();
