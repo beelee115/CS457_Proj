@@ -17,54 +17,40 @@ import scala.Tuple2;
 
 public class mergeSort {
     public static void main(String[] args) throws Exception{
-        // if (args.length < 1) {
-        //     System.err.println("Usage: DistributedMergeSort <file>");
-        //     System.exit(1);
-        // }
 
         //initialize spark
         SparkConf conf = new SparkConf().setAppName("DistributedMergeSort");
         JavaSparkContext sc = new JavaSparkContext(conf);
-
-        long startTime = System.currentTimeMillis(); 
         
-        // //create random data
-        // List<Integer> randomNumbers = newArrayList<>();
-        // Random rand = new Random();
-        // int numItems = 100; 
-        // for (int i = 0; i < numItems; i++){
-        //     randomNumbers.add(rand.nextInt(1_000_000));
-        // }
-
         //data from file instead of random data
         String inputFile = "file:///Users/michellelu/mergeSort/src/main/java/unsortedNum.txt";
 
         //RDD
-        
-        //JavaRDD<String> data = sc.parallelize(randomNumbers, numPartitions);
         //read file
         JavaRDD<String> stringData = sc.textFile(inputFile);
         JavaRDD<Integer> data = stringData.map(line -> Integer.parseInt(line.trim()));
 
+        // partitioning, sorting, and merging
         int numPartitions = 8;
+        long startTime = System.currentTimeMillis();
         data = data.repartition(numPartitions);
-
-        // combining results from all partitions
-        long combiningPartitionStartTime = System.currentTimeMillis();
         JavaRDD<Integer> combineSortedPartitions = data.sortBy(x -> x, true, numPartitions);
-        long combiningPartitionEndTime = System.currentTimeMillis();
-        System.out.println("time to combine all partitions: " + (combiningPartitionEndTime - combiningPartitionStartTime) + " ms");
-
-        // Collect and print the first 50 sorted numbers
+        long endTime = System.currentTimeMillis();
+    
+        // print result
         List<Integer> sorted = combineSortedPartitions.take(50);
         System.out.println("First 50 sorted numbers:");
-        for (int i = 0; i < sorted.size(); i++) {
-            System.out.println(sorted.get(i));
-        }
-        
-        long endTime = System.currentTimeMillis();
-        System.out.println("Total runtime: " + (endTime - startTime) + " ms");
 
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < sorted.size(); i++) {
+            sb.append(sorted.get(i));
+            if (i < sorted.size() - 1) {
+                sb.append(", ");
+            }
+        }
+        System.out.println(sb.toString());
+        
+        System.out.println("Total runtime: " + (endTime - startTime) + " ms");
 
         //done
         sc.stop();
