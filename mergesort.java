@@ -49,7 +49,7 @@ public static void main(String[] args) throws Exception{
 
     // combining results from all partitions
     long combiningPartitionStartTime = System.currentTimeMillis();
-    JavaRDD<Integer> combineSortedPartitions = rdd.sortBy(x -> x, true, numPartitions);
+    JavaRDD<Integer> combineSortedPartitions = data.sortBy(x -> x, true, numPartitions);
     long combiningPartitionEndTime = System.currentTimeMillis();
     System.out.println("time to combine all partitions: " + (combiningPartitionEndTime - combiningPartitionStartTime) + " ms");
 
