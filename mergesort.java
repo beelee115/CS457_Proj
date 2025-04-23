@@ -27,47 +27,43 @@ public static void main(String[] args) throws Exception{
 
     long startTime = System.currentTimeMillis(); 
     
-    //create random data
-    List<Integer> randomNumbers = newArrayList<>();
-    Random rand = new Random();
-    int numItems = 100; 
-    for (int i = 0; i < numItems; i++){
-        randomNumbers.add(rand.nextInt(1_000_000));
-    }
+    // //create random data
+    // List<Integer> randomNumbers = newArrayList<>();
+    // Random rand = new Random();
+    // int numItems = 100; 
+    // for (int i = 0; i < numItems; i++){
+    //     randomNumbers.add(rand.nextInt(1_000_000));
+    // }
+
+    //data from file instead of random data
+    String inputFile = "unsortedNum.txt";
     //RDD
-    int numPartitions = 8;
-    JavaRDD<String> data = sc.parallelize(randomNumbers, numPartitions);
-
     
-    //pass eahc element through a function func map(func) ?? maybe not
-        
-        //data partitionned and sorted by different nodes  map.Partitions????
-        //slpit data into chunks to be sorted in parallel
-            //how to split data
-        //data randomly created ? not sure
+    //JavaRDD<String> data = sc.parallelize(randomNumbers, numPartitions);
+    //read file
+    JavaRDD<String> stringData = sc.textFile(inputFile);
+    JavaRDD<Integer> data = stringData.map(line -> Integer.parseInt(line.trim()));
 
-    //merge results
+    int numPartitions = 8;
+    data = data.repartition(numPartitions);
 
+    // combining results from all partitions
+    long combiningPartitionStartTime = System.currentTimeMillis();
+    JavaRDD<Integer> combineSortedPartitions = rdd.sortBy(x -> x, true, numPartitions);
+    long combiningPartitionEndTime = System.currentTimeMillis();
+    System.out.println("time to combine all partitions: " + (combiningPartitionEndTime - combiningPartitionStartTime) + " ms");
 
-        // combining results from all partitions
-        long combiningPartitionStartTime = System.currentTimeMillis();
-        JavaRDD<Integer> combineSortedPartitions = rdd.sortBy(x -> x, true, numPartitions);
-        long combiningPartitionEndTime = System.currentTimeMillis();
-        System.out.println("time to combine all partitions: " + (combiningPartitionEndTime - combiningPartitionStartTime) + " ms");
-
-        // Collect and print the first 100 sorted numbers
-        List<Integer> sorted = combineSortedPartitions.take(100);
-        System.out.println("First 100 sorted numbers:");
-        for (int i = 0; i < sorted.size(); i++) {
-            System.out.println(sorted.get(i));
-        }
-        
-        long endTime = System.currentTimeMillis();
-        System.out.println("Total runtime: " + (endTime - startTime) + " ms");
+    // Collect and print the first 100 sorted numbers
+    List<Integer> sorted = combineSortedPartitions.take(100);
+    System.out.println("First 100 sorted numbers:");
+    for (int i = 0; i < sorted.size(); i++) {
+        System.out.println(sorted.get(i));
+    }
+    
+    long endTime = System.currentTimeMillis();
+    System.out.println("Total runtime: " + (endTime - startTime) + " ms");
 
 
     //done
     sc.stop();
 }
-
-
